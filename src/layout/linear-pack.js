@@ -54,7 +54,7 @@ d3.layout.linearPack = function () {
                             break;
                         case 2: // create third node and build front-chain
                             c = nodes[i];
-                            d3_layout_packPlace(a, b, c);
+                            d3_layout_linearPackPlace(a, b, c);
                             bound(c);
                             d3_layout_packInsert(a, c);
                             a._pack_prev = c;
@@ -70,7 +70,7 @@ d3.layout.linearPack = function () {
                     var place = function (j) {
                         if (d3_layout_linearPackContain(t, [j.x - j.r, j.x + j.r])) {
                             for (k = j._pack_next; k != j && d3_layout_linearPackTanDist(j, k) <= nodes[i].r * 2; k = k._pack_next) { // search for the 2nd append node
-                                d3_layout_packPlace(j, k, nodes[i]);
+                                d3_layout_linearPackPlace(j, k, nodes[i]);
                                 var insect = 0;
                                 for (l = 0; l < i; l++) { // check intersection
                                     if (d3_layout_packIntersects(nodes[l], nodes[i])) {
@@ -79,7 +79,7 @@ d3.layout.linearPack = function () {
                                     }
                                 }
                                 if (insect == 0) {
-                                    var location = JSON.parse(JSON.stringify(d3_layout_packPlace(j, k, nodes[i])));
+                                    var location = JSON.parse(JSON.stringify(d3_layout_linearPackPlace(j, k, nodes[i])));
                                     locations.push(location);
                                     map.push(j);
                                     map2.push(k);
@@ -167,6 +167,28 @@ function d3_layout_linearPackCompare(a,b) {
         }
         return 0;
     }
+}
+
+function d3_layout_linearPackPlace(a, b, c) {
+    var db = a.r + c.r,
+        dx = b.x - a.x,
+        dy = b.y - a.y;
+    if (db && (dx || dy)) {
+        var da = b.r + c.r,
+            dc = dx * dx + dy * dy;
+        da *= da;
+        db *= db;
+        var x = .5 + (db - da) / (2 * dc),
+            y = Math.sqrt(Math.max(0, 2 * da * (db + dc) - (db -= dc) * db - da * da)) / (2 * dc);
+        c.x = a.x + x * dx + y * dy;
+        c.y = a.y + x * dy - y * dx;
+    } else {
+        c.x = a.x + db;
+        c.y = a.y;
+    }
+    c.dist = Math.sqrt(Math.pow(c.x - c.t, 2) + Math.pow(c.y - 0, 2));
+    //c.neighbour = a;
+    return c;
 }
 
 function d3_layout_linearPackTanDist(a, b) {
