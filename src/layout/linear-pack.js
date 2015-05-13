@@ -8,8 +8,10 @@ d3.layout.linearPack = function () {
         event = d3.dispatch("start"),
         nodes = [],
         padding = 0,
-        size = [1, 1],
-        scale = 1;
+        width = 1000,
+        scale = 1,
+        radiusScale,
+        range;
 
     linearPack.start = function () {
         var n = nodes.length,
@@ -22,21 +24,28 @@ d3.layout.linearPack = function () {
             bounds[1] = Math.max(bounds[1], node.x + node.r);
         }
 
-        nodes = nodes.sort(d3_layout_linearPackCompare); // sort
-        scale = size[1] / nodes.slice(-1)[0].t;
+        var nodesByRadius = nodes.sort(function (a, b) {
+            return a.r - b.r;
+        });
+        nodes.sort(d3_layout_linearPackCompare); // sort
+        range = [nodes[0].t, nodes[n-1].t];
+        scale = width / nodes[n-1].t;
+        var radiusMedian = nodesByRadius[Math.floor(n/2)].r;
+        if (!radiusScale) {
+            radiusScale = scale / radiusMedian;
+        }
         for (i = 0; i < n; i++) {
             nodes[i].t = nodes[i].t * scale;
-            nodes[i].r = nodes[i].r * padding;
+            nodes[i].r = nodes[i].r * padding * radiusScale;
         }
-
         return function(i) {
             if (i >= n) {
                 return - 2;
-            } else if (nodes[i].r <= 0) {
+            } else if (nodes[i].r === 0) {
                 return i;
             }
             var t = [nodes[i].t - nodes[i].r, nodes[i].t + nodes[i].r];
-            if (bounds[0] == bounds[1] || d3_layout_linearPackContain(bounds, t)) {
+            if (bounds[0] === bounds[1] || d3_layout_linearPackContain(bounds, t)) {
                 if (i - start < 3) { // the first three are trivial
                     d3_layout_packLink(nodes[i]);
                     switch(i - start) {
@@ -54,7 +63,7 @@ d3.layout.linearPack = function () {
                             break;
                         case 2: // create third node and build front-chain
                             c = nodes[i];
-                            d3_layout_linearPackPlace(a, b, c);
+                            d3_layout_pack2Place(a, b, c);
                             bound(c);
                             d3_layout_packInsert(a, c);
                             a._pack_prev = c;
@@ -67,10 +76,13 @@ d3.layout.linearPack = function () {
                         map = [],
                         map2 = [];
 
-                    var place = function (j) {
+                    var place = function (i, j) {
                         if (d3_layout_linearPackContain(t, [j.x - j.r, j.x + j.r])) {
-                            for (k = j._pack_next; k != j && d3_layout_linearPackTanDist(j, k) <= nodes[i].r * 2; k = k._pack_next) { // search for the 2nd append node
-                                d3_layout_linearPackPlace(j, k, nodes[i]);
+                            for (k = j._pack_next; k != j; k = k._pack_next) { // search for the 2nd append node
+                                if (d3_layout_linearPackTanDist(j, k) > nodes[i].r * 2) {
+                                    continue;
+                                }
+                                d3_layout_pack2Place(j, k, nodes[i]);
                                 var insect = 0;
                                 for (l = 0; l < i; l++) { // check intersection
                                     if (d3_layout_packIntersects(nodes[l], nodes[i])) {
@@ -78,8 +90,8 @@ d3.layout.linearPack = function () {
                                         break;
                                     }
                                 }
-                                if (insect == 0) {
-                                    var location = JSON.parse(JSON.stringify(d3_layout_linearPackPlace(j, k, nodes[i])));
+                                if (insect === 0) {
+                                    var location = JSON.parse(JSON.stringify(d3_layout_pack2Place(j, k, nodes[i])));
                                     locations.push(location);
                                     map.push(j);
                                     map2.push(k);
@@ -89,11 +101,11 @@ d3.layout.linearPack = function () {
                     };
 
                     for (j = a._pack_next; j !== a; j = j._pack_next) { // search for the 1st append node
-                        place(j);
+                        place(i, j);
                     }
-                    place(j);
+                    place(i, j);
 
-                    if (locations.length == 0) {
+                    if (locations.length === 0) {
                         console.log("no valid location...");
                         return -2;
                     }
@@ -110,7 +122,6 @@ d3.layout.linearPack = function () {
                     a = map[index];
                     b = map2[index];
 
-                    d3_layout_packSplice(a, b);
                     d3_layout_packInsert(a, nodes[i]); b = nodes[i];
                     bound(nodes[i]);
                 }
@@ -127,9 +138,9 @@ d3.layout.linearPack = function () {
         return linearPack;
     };
 
-    linearPack.size = function (x) {
-        if (!arguments.length) return size;
-        size = x;
+    linearPack.width = function (x) {
+        if (!arguments.length) return width;
+        width = x;
         return linearPack;
     };
 
@@ -145,31 +156,45 @@ d3.layout.linearPack = function () {
         return linearPack;
     };
 
+    linearPack.radiusScale = function (x) {
+        if (!arguments.length) return radiusScale;
+        radiusScale = x;
+        return linearPack;
+    };
+
+    linearPack.range = function () {
+        return range;
+    };
+
     d3.rebind(linearPack, event, "on");
     return linearPack;
 };
 
-function d3_layout_linearPackContain(a, b) {
-    return !(a[1] < b[0] || b[1] < a[0]);
+function d3_layout_packInsert(a, b) {
+    var c = a._pack_next;
+    a._pack_next = b;
+    b._pack_prev = a;
+    b._pack_next = c;
+    c._pack_prev = b;
 }
 
-function d3_layout_linearPackCompare(a,b) {
-    if (a.t < b.t)
-        return -1;
-    if (a.t > b.t)
-        return 1;
-    else {
-        if(a.r < b.r) {
-            return 1;
-        }
-        if (a.r > b.r) {
-            return -1;
-        }
-        return 0;
-    }
+function d3_layout_packIntersects(a, b) {
+    var dx = b.x - a.x,
+        dy = b.y - a.y,
+        dr = a.r + b.r;
+    return .999 * dr * dr > dx * dx + dy * dy; // relative error within epsilon
 }
 
-function d3_layout_linearPackPlace(a, b, c) {
+function d3_layout_packLink(node) {
+    node._pack_next = node._pack_prev = node;
+}
+
+function d3_layout_packSplice(a, b) {
+    a._pack_next = b;
+    b._pack_prev = a;
+}
+
+function d3_layout_pack2Place(a, b, c) {
     var db = a.r + c.r,
         dx = b.x - a.x,
         dy = b.y - a.y;
@@ -189,6 +214,26 @@ function d3_layout_linearPackPlace(a, b, c) {
     c.dist = Math.sqrt(Math.pow(c.x - c.t, 2) + Math.pow(c.y - 0, 2));
     //c.neighbour = a;
     return c;
+}
+
+function d3_layout_linearPackContain(a, b) {
+    return !(a[1] < b[0] || b[1] < a[0]);
+}
+
+function d3_layout_linearPackCompare(a,b) {
+    if (a.t < b.t)
+        return -1;
+    if (a.t > b.t)
+        return 1;
+    else {
+        if(a.r < b.r) {
+            return 1;
+        }
+        if (a.r > b.r) {
+            return -1;
+        }
+        return 0;
+    }
 }
 
 function d3_layout_linearPackTanDist(a, b) {
